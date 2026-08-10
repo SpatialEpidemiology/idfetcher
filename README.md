@@ -12,7 +12,7 @@ This package uses:
 - NCBI PMCID Converter
 - NCBI PubMed E-utilities
 
-The function writes identifiers to Zotero’s fields:
+The `idfetcher()` function writes identifiers to Zotero’s fields:
 
 - `PMID`
 - `PMCID`
