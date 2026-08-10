@@ -4,16 +4,18 @@
 `idfetcher` is an R package that retrieves PMID and PMCID identifiers for journal articles in
 a Zotero library to match NIH submission requirements.
 
-This uses:
+This package uses:
 
 - Zotero Web API
-- NCBI PMC ID Converter
+- NCBI PMCID Converter
 - NCBI PubMed E-utilities
 
-The function writes identifiers to Zotero’s dedicated fields:
+The function writes identifiers to Zotero’s fields:
 
 - `PMID`
 - `PMCID`
+
+A Zotero API key and User ID are required for this package to operate.
 
 ## Installation
 
