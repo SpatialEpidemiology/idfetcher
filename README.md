@@ -21,4 +21,4 @@ fields.
 
 Install the required R packages:
 
-\`\`\`r install.packages(c(“httr2”, “jsonlite”))
+install.packages(c(“httr2”, “jsonlite”))
