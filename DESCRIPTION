@@ -1,0 +1,24 @@
+Package: idfetcher
+Type: Package
+Title: Retrieve PMID and PMCID Identifiers for Zotero Articles
+Version: 1.0.0
+Authors@R: 
+    person(
+        "IDFetcher",
+        "Blake Buchalter",
+        email = "buchalter@uab.edu",
+        role = c("aut", "cre")
+    )
+Description:
+    Retrieves PMID and PMCID identifiers for journal articles stored
+    in a Zotero library using the Zotero Web API and NCBI services 
+    to match NIH submission requirements.
+    Identifiers are written to Zotero's dedicated PMID and PMCID
+    fields. The Zotero Extra field is never modified.
+License: MIT + file LICENSE
+Encoding: UTF-8
+Roxygen: list(markdown = TRUE)
+Imports:
+    httr2,
+    jsonlite
+Config/roxygen2/version: 8.1.0
