@@ -17,10 +17,7 @@ The function writes identifiers to Zotero’s dedicated fields:
 
 ## Installation
 
-Install the required R packages:
-
-install.packages(c(“httr2”, “jsonlite”, "devtools"))
-
 library(devtools)
+
 install_github("spatialepidemiology/idfetcher")
 
