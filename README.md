@@ -10,12 +10,10 @@ This uses:
 - NCBI PMC ID Converter
 - NCBI PubMed E-utilities
 
-The function writes identifiers to Zotero’s dedicated:
+The function writes identifiers to Zotero’s dedicated fields:
 
 - `PMID`
 - `PMCID`
-
-fields.
 
 ## Installation
 
