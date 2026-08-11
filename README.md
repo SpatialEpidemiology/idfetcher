@@ -2,7 +2,7 @@
 # idfetcher
 
 `idfetcher` is an R package that retrieves PMID and PMCID identifiers for journal articles in
-any Zotero library to match NIH submission requirements. 
+any Zotero library to satisfy NIH submission requirements. 
 
 Have you ever been annoyed when creating your grant bibliography that your Zotero reference library is missing many PMCIDs, which NIH requires? Me too! This tool is for you.
 
