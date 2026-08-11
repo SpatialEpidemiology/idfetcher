@@ -9,7 +9,7 @@ Have you ever been annoyed when creating your grant bibliography that your Zoter
 This package uses:
 
 - Zotero Web API
-- NCBI PMCID Converter
+- NCBI PMC ID Converter
 - NCBI PubMed E-utilities
 
 The `idfetcher()` function writes identifiers to Zotero’s fields:
