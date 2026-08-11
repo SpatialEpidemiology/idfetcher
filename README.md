@@ -5,7 +5,7 @@
 any Zotero library to satisfy NIH submission requirements. It uses DOI and other existing metadata
 in Zotero to assign PMIDs and PMCIDs.
 
-Have you ever been annoyed when creating your grant bibliography that your Zotero reference library is missing many PMCIDs, which NIH requires? Me too! This tool is for you.
+Have you ever been annoyed that your Zotero reference library is missing many PMCIDs, which NIH requires in grant bibliographies? Me too! This tool is for you.
 
 This package uses:
 
