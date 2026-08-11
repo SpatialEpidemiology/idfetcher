@@ -1,9 +1,14 @@
 #' Fetch and write PMID and PMCID identifiers to Zotero
 #'
+#' Retrieves PMID and PMCID identifiers for Zotero journal articles
+#' using the NCBI PMC ID Converter and PubMed APIs.
+#'
 #' Lookup order:
 #'   1. PMC ID Converter using DOI
 #'   2. PubMed using DOI
 #'   3. PubMed using title + first author + year
+#'
+#' Identifiers are written only to Zotero's dedicated PMID and PMCID fields.
 #'
 #' @param dry_run Logical. If TRUE, lookups are performed but Zotero is not
 #' modified. Default is TRUE.
@@ -26,6 +31,10 @@ idfetcher <- function(
     ncbi_api_key = ""
 ) {
 
+  # --------------------------------------------------------------------------
+  # Package checks
+  # --------------------------------------------------------------------------
+
   if (!requireNamespace("httr2", quietly = TRUE)) {
     stop(
       "Package 'httr2' is required. ",
@@ -41,6 +50,10 @@ idfetcher <- function(
       call. = FALSE
     )
   }
+
+  # --------------------------------------------------------------------------
+  # Credentials
+  # --------------------------------------------------------------------------
 
   credentials <- idfetcher_get_credentials()
 
@@ -70,6 +83,10 @@ idfetcher <- function(
   user_id <- as.character(user_id)
   api_key <- as.character(api_key)
 
+  # --------------------------------------------------------------------------
+  # URLs
+  # --------------------------------------------------------------------------
+
   zotero_base <- "https://api.zotero.org"
 
   pmc_url <- paste0(
@@ -89,10 +106,15 @@ idfetcher <- function(
 
   user_agent <- "IDFetcher/1.1"
 
+  # --------------------------------------------------------------------------
+  # Utility functions
+  # --------------------------------------------------------------------------
+
   `%||%` <- function(x, y) {
     if (is.null(x)) {
       return(y)
     }
+
     x
   }
 
@@ -111,7 +133,9 @@ idfetcher <- function(
       return("")
     }
 
-    doi <- trimws(tolower(doi))
+    doi <- trimws(
+      tolower(doi)
+    )
 
     prefixes <- c(
       "https://doi.org/",
@@ -234,7 +258,11 @@ idfetcher <- function(
 
     if (
       !is.null(creator$lastName) &&
-      nzchar(as.character(creator$lastName))
+      nzchar(
+        as.character(
+          creator$lastName
+        )
+      )
     ) {
       return(
         as.character(
@@ -245,7 +273,11 @@ idfetcher <- function(
 
     if (
       !is.null(creator$name) &&
-      nzchar(as.character(creator$name))
+      nzchar(
+        as.character(
+          creator$name
+        )
+      )
     ) {
       return(
         as.character(
@@ -268,6 +300,10 @@ idfetcher <- function(
 
     params
   }
+
+  # --------------------------------------------------------------------------
+  # PubMed DOI lookup
+  # --------------------------------------------------------------------------
 
   get_pubmed_id <- function(doi) {
 
@@ -404,6 +440,10 @@ idfetcher <- function(
 
     NA_character_
   }
+
+  # --------------------------------------------------------------------------
+  # PubMed metadata fallback
+  # --------------------------------------------------------------------------
 
   get_pubmed_id_by_metadata <- function(
     title,
@@ -730,6 +770,10 @@ idfetcher <- function(
     NA_character_
   }
 
+  # --------------------------------------------------------------------------
+  # PMC ID Converter
+  # --------------------------------------------------------------------------
+
   get_pmc_records <- function(dois) {
 
     if (length(dois) == 0) {
@@ -877,6 +921,10 @@ idfetcher <- function(
     list()
   }
 
+  # --------------------------------------------------------------------------
+  # Get Zotero journal articles
+  # --------------------------------------------------------------------------
+
   get_zotero_articles <- function() {
 
     all_items <- list()
@@ -971,6 +1019,10 @@ idfetcher <- function(
     all_items
   }
 
+  # --------------------------------------------------------------------------
+  # Update Zotero item
+  # --------------------------------------------------------------------------
+
   update_zotero_item <- function(item) {
 
     item_key <- item$key
@@ -979,7 +1031,6 @@ idfetcher <- function(
       is.null(item_key) ||
       !nzchar(item_key)
     ) {
-
       stop(
         "Zotero item has no key."
       )
@@ -995,6 +1046,12 @@ idfetcher <- function(
 
     req <- httr2::request(
       url
+    )
+
+    # Explicitly use PUT for a full-item update.
+    req <- httr2::req_method(
+      req,
+      "PUT"
     )
 
     req <- httr2::req_headers(
@@ -1046,6 +1103,10 @@ idfetcher <- function(
     TRUE
   }
 
+  # --------------------------------------------------------------------------
+  # Start
+  # --------------------------------------------------------------------------
+
   message("")
   message(
     "======================================================================"
@@ -1056,16 +1117,26 @@ idfetcher <- function(
   )
   message("")
 
-  message("Connecting to Zotero...")
-  message("Fetching journal articles...")
+  message(
+    "Connecting to Zotero..."
+  )
+
+  message(
+    "Fetching journal articles..."
+  )
 
   items <- get_zotero_articles()
 
   message("")
+
   message(
     "Total journal articles: ",
     length(items)
   )
+
+  # --------------------------------------------------------------------------
+  # Find articles requiring lookup
+  # --------------------------------------------------------------------------
 
   todo <- list()
 
@@ -1122,6 +1193,10 @@ idfetcher <- function(
     )
   }
 
+  # --------------------------------------------------------------------------
+  # Counters
+  # --------------------------------------------------------------------------
+
   updated <- 0
   pmids_added <- 0
   pmcids_added <- 0
@@ -1131,6 +1206,10 @@ idfetcher <- function(
   pubmed_metadata_fallbacks <- 0
   not_found <- 0
   errors <- 0
+
+  # --------------------------------------------------------------------------
+  # Process batches
+  # --------------------------------------------------------------------------
 
   for (
     start in seq(
@@ -1151,6 +1230,7 @@ idfetcher <- function(
     message(
       "======================================================================"
     )
+
     message(
       "Processing ",
       start,
@@ -1159,9 +1239,14 @@ idfetcher <- function(
       " of ",
       length(todo)
     )
+
     message(
       "======================================================================"
     )
+
+    # ------------------------------------------------------------------------
+    # Build DOI map
+    # ------------------------------------------------------------------------
 
     doi_map <- list()
 
@@ -1172,9 +1257,14 @@ idfetcher <- function(
       )
 
       if (nzchar(doi)) {
+
         doi_map[[doi]] <- item
       }
     }
+
+    # ------------------------------------------------------------------------
+    # PMC lookup
+    # ------------------------------------------------------------------------
 
     pmc_records <- list()
 
@@ -1211,6 +1301,10 @@ idfetcher <- function(
       )
     }
 
+    # ------------------------------------------------------------------------
+    # Process each item
+    # ------------------------------------------------------------------------
+
     for (item in batch) {
 
       current_pmid <- get_field(
@@ -1240,6 +1334,10 @@ idfetcher <- function(
         item
       )
 
+      # ----------------------------------------------------------------------
+      # Already complete
+      # ----------------------------------------------------------------------
+
       if (
         nzchar(current_pmid) &&
         nzchar(current_pmcid)
@@ -1262,6 +1360,10 @@ idfetcher <- function(
 
       pmid <- NULL
       pmcid <- NULL
+
+      # ----------------------------------------------------------------------
+      # PMC result
+      # ----------------------------------------------------------------------
 
       if (nzchar(doi)) {
 
@@ -1290,6 +1392,10 @@ idfetcher <- function(
           }
         }
       }
+
+      # ----------------------------------------------------------------------
+      # PubMed DOI fallback
+      # ----------------------------------------------------------------------
 
       if (
         is.null(pmid) ||
@@ -1330,6 +1436,10 @@ idfetcher <- function(
         pubmed_delay
       )
 
+      # ----------------------------------------------------------------------
+      # PubMed metadata fallback
+      # ----------------------------------------------------------------------
+
       if (
         is.null(pmid) ||
         !nzchar(pmid)
@@ -1363,6 +1473,7 @@ idfetcher <- function(
               "  PMID: ",
               pmid
             )
+
           } else {
 
             message(
@@ -1375,6 +1486,10 @@ idfetcher <- function(
       Sys.sleep(
         pubmed_delay
       )
+
+      # ----------------------------------------------------------------------
+      # Preserve existing values
+      # ----------------------------------------------------------------------
 
       final_pmid <- current_pmid
       final_pmcid <- current_pmcid
@@ -1399,6 +1514,10 @@ idfetcher <- function(
         final_pmcid <- pmcid
       }
 
+      # ----------------------------------------------------------------------
+      # Nothing found
+      # ----------------------------------------------------------------------
+
       if (
         !nzchar(final_pmid) &&
         !nzchar(final_pmcid)
@@ -1417,6 +1536,10 @@ idfetcher <- function(
 
         next
       }
+
+      # ----------------------------------------------------------------------
+      # Determine what needs to be added
+      # ----------------------------------------------------------------------
 
       add_pmid <-
         nzchar(final_pmid) &&
@@ -1463,6 +1586,10 @@ idfetcher <- function(
         )
       }
 
+      # ----------------------------------------------------------------------
+      # Dry run
+      # ----------------------------------------------------------------------
+
       if (dry_run) {
 
         message(
@@ -1470,11 +1597,13 @@ idfetcher <- function(
         )
 
         if (add_pmid) {
+
           pmids_added <-
             pmids_added + 1
         }
 
         if (add_pmcid) {
+
           pmcids_added <-
             pmcids_added + 1
         }
@@ -1483,12 +1612,17 @@ idfetcher <- function(
           add_pmid &&
           add_pmcid
         ) {
+
           both_added <-
             both_added + 1
         }
 
         next
       }
+
+      # ----------------------------------------------------------------------
+      # Update Zotero
+      # ----------------------------------------------------------------------
 
       tryCatch({
 
@@ -1515,11 +1649,13 @@ idfetcher <- function(
         updated <- updated + 1
 
         if (add_pmid) {
+
           pmids_added <-
             pmids_added + 1
         }
 
         if (add_pmcid) {
+
           pmcids_added <-
             pmcids_added + 1
         }
@@ -1528,6 +1664,7 @@ idfetcher <- function(
           add_pmid &&
           add_pmcid
         ) {
+
           both_added <-
             both_added + 1
         }
@@ -1552,12 +1689,18 @@ idfetcher <- function(
     )
   }
 
+  # --------------------------------------------------------------------------
+  # Final report
+  # --------------------------------------------------------------------------
+
   message("")
   message("")
   message(
     "======================================================================"
   )
-  message("FINAL REPORT")
+  message(
+    "FINAL REPORT"
+  )
   message(
     "======================================================================"
   )
@@ -1624,13 +1767,20 @@ idfetcher <- function(
   if (dry_run) {
 
     message("")
-    message("DRY RUN COMPLETE.")
-    message("NOTHING WAS WRITTEN TO ZOTERO.")
+    message(
+      "DRY RUN COMPLETE."
+    )
+
+    message(
+      "NOTHING WAS WRITTEN TO ZOTERO."
+    )
 
   } else {
 
     message("")
-    message("UPDATE COMPLETE.")
+    message(
+      "UPDATE COMPLETE."
+    )
   }
 
   invisible(
