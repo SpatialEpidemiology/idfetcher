@@ -40,6 +40,5 @@ Invisibly returns a list containing the run summary.
 \description{
 Retrieves PMID and PMCID identifiers for Zotero journal articles using
 the NCBI PMC ID Converter and PubMed APIs. Identifiers are written only
-to Zotero's dedicated PMID and PMCID fields. The Zotero Extra field is
-never modified.
+to Zotero's PMID and PMCID fields.
 }

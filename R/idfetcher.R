@@ -971,9 +971,6 @@ idfetcher <- function(
           "  UPDATED Zotero."
         )
 
-        message(
-          "  Extra was NOT modified."
-        )
 
       }, error = function(e) {
 
