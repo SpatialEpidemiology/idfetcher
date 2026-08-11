@@ -23,6 +23,7 @@ A Zotero API key and User ID are required for this package to operate.
 ## Installation
 
 library(devtools)
+
 install_github("spatialepidemiology/idfetcher")
 
 ## Usage
