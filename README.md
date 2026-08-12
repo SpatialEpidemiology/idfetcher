@@ -1,5 +1,5 @@
 
-# idfetcher
+# `idfetcher` for Zotero
 
 INITIAL VERSION UNDER ACTIVE DEVELOPMENT - USE AT YOUR OWN RISK
 
