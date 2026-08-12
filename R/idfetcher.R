@@ -1500,7 +1500,7 @@ idfetcher <- function(
         db = "pubmed",
         term = query,
         retmode = "json",
-        retmax = "100",
+        retmax = "20",
         tool = "idfetcher"
       )
 
