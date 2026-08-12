@@ -3,7 +3,7 @@
 #' Lookup order:
 #'   1. PMC ID Converter using DOI
 #'   2. PubMed DOI lookup if PMC does not return a PMID
-#'   3. PubMed title + first-author search
+#'   3. PubMed title + first author search
 #'   4. PubMed title-only searches with progressively broader queries
 #'   5. Candidate scoring against Zotero title and first author
 #'
@@ -2075,7 +2075,7 @@ idfetcher <- function(
         }
 
         # --------------------------------------------------------------
-        # PubMed title + first-author fallback
+        # PubMed title + first author fallback
         # --------------------------------------------------------------
 
         if (
@@ -2148,13 +2148,13 @@ idfetcher <- function(
             ) {
 
               message(
-                "  First-author match: YES"
+                "  First author match: YES"
               )
 
             } else {
 
               message(
-                "  First-author match: NO"
+                "  First author match: NO"
               )
             }
 
@@ -2528,7 +2528,7 @@ idfetcher <- function(
       }
 
       message(
-        "  First-author match: ",
+        "  First author match: ",
         ifelse(
           isTRUE(record$author_match),
           "YES",
