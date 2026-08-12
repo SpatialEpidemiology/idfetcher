@@ -32,5 +32,5 @@ install_github("spatialepidemiology/idfetcher")
 
 idfetcher_set_credentials("YourZoteroUserID", "YourZoteroAPIKey")
 
-idfetcher()
+idfetcher(dry_run=TRUE) #add dry_run=FALSE to append Zotero
 
