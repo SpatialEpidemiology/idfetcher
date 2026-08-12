@@ -359,14 +359,13 @@ idfetcher <- function(
   # --------------------------------------------------------------------------
   # Generic NCBI request
   #
-  # IMPORTANT FIX:
+  # IMPORTANT:
+  # httr2::req_url_query() does not accept a list through .args.
+  # Passing .args = list(...) causes:
   #
-  # httr2::req_url_query() expects query parameters through ... .
-  # Passing the whole parameter list as `.args = params` causes:
+  # "All elements of `...` must be either an atomic vector or NULL."
   #
-  #   All elements of `...` must be either an atomic vector or NULL.
-  #
-  # We therefore expand the named list with do.call().
+  # Query parameters are therefore added one at a time using do.call().
   # --------------------------------------------------------------------------
 
   ncbi_request <- function(
@@ -382,12 +381,15 @@ idfetcher <- function(
       stop("NCBI request parameters must be a list.")
     }
 
-    # Make sure every parameter is atomic or NULL.
     params <- lapply(
       params,
       function(x) {
 
-        if (is.null(x) || length(x) == 0) {
+        if (is.null(x)) {
+          return(NULL)
+        }
+
+        if (length(x) == 0) {
           return(NULL)
         }
 
@@ -404,13 +406,10 @@ idfetcher <- function(
       }
     )
 
-    # Remove NULL parameters.
     params <- params[
-      vapply(
+      !vapply(
         params,
-        function(x) {
-          !is.null(x) && length(x) > 0
-        },
+        is.null,
         logical(1)
       )
     ]
@@ -426,16 +425,30 @@ idfetcher <- function(
           `User-Agent` = user_agent
         )
 
-        # Correctly expand the named list into ...
-        if (length(params) > 0) {
+        # Add each query parameter individually.
+        # This avoids passing a list into httr2's dynamic dots.
+        for (param_name in names(params)) {
 
-          req <- do.call(
-            httr2::req_url_query,
-            c(
-              list(.req = req),
-              params
+          param_value <- params[[param_name]]
+
+          if (
+            !is.null(param_value) &&
+            length(param_value) > 0
+          ) {
+
+            query_arg <- setNames(
+              list(param_value),
+              param_name
             )
-          )
+
+            req <- do.call(
+              httr2::req_url_query,
+              c(
+                list(req),
+                query_arg
+              )
+            )
+          }
         }
 
         httr2::req_perform(req)
@@ -833,6 +846,7 @@ idfetcher <- function(
           "xml_missing"
         )
       ) {
+
         pmid <- trimws(
           xml2::xml_text(
             pmid_node
@@ -848,6 +862,7 @@ idfetcher <- function(
           "xml_missing"
         )
       ) {
+
         title <- trimws(
           xml2::xml_text(
             title_node
@@ -889,6 +904,7 @@ idfetcher <- function(
             "xml_missing"
           )
         ) {
+
           year <- trimws(
             xml2::xml_text(year_node)
           )
@@ -900,6 +916,7 @@ idfetcher <- function(
             "xml_missing"
           )
         ) {
+
           month <- trimws(
             xml2::xml_text(month_node)
           )
@@ -911,6 +928,7 @@ idfetcher <- function(
             "xml_missing"
           )
         ) {
+
           day <- trimws(
             xml2::xml_text(day_node)
           )
@@ -927,6 +945,7 @@ idfetcher <- function(
         ]
 
         if (length(date_parts) > 0) {
+
           pub_date <- paste(
             date_parts,
             collapse = "-"
@@ -960,14 +979,16 @@ idfetcher <- function(
             nzchar(id_value)
           ) {
 
-            article_ids[
-              [tolower(id_type)]
-            ] <- id_value
+            # CORRECT: [[key]], not [ [key] ]
+            article_ids[[tolower(id_type)]] <- id_value
           }
         }
       }
 
+      # ----------------------------------------------------------------------
       # First author
+      # ----------------------------------------------------------------------
+
       first_author <- ""
 
       author_node <- xml2::xml_find_first(
@@ -1091,6 +1112,7 @@ idfetcher <- function(
     score <- title_score
 
     if (author_match) {
+
       score <- min(
         1,
         score + 0.05
@@ -1121,6 +1143,7 @@ idfetcher <- function(
     scores <- lapply(
       records,
       function(record) {
+
         score_pubmed_record(
           zotero_title,
           zotero_author,
@@ -1143,13 +1166,11 @@ idfetcher <- function(
       score_values
     )
 
-    best_record <- records[
-      [best_index]
-    ]
+    # CORRECT: [[index]], not [ [index] ]
+    best_record <- records[[best_index]]
 
-    best_score <- scores[
-      [best_index]
-    ]
+    # CORRECT: [[index]], not [ [index] ]
+    best_score <- scores[[best_index]]
 
     if (
       best_score$title_score >= 0.94
@@ -1209,7 +1230,10 @@ idfetcher <- function(
 
     queries <- character(0)
 
-    # Exact title phrase
+    # ------------------------------------------------------------------------
+    # Search 1: Exact title phrase
+    # ------------------------------------------------------------------------
+
     queries <- c(
       queries,
       paste0(
@@ -1218,6 +1242,10 @@ idfetcher <- function(
         "\"[Title]"
       )
     )
+
+    # ------------------------------------------------------------------------
+    # Search 2: Title terms + first author
+    # ------------------------------------------------------------------------
 
     words <- title_tokens(
       title
@@ -1256,7 +1284,10 @@ idfetcher <- function(
         )
       }
 
-      # Longer title-term search
+      # ----------------------------------------------------------------------
+      # Search 3: Longer title-term search without author
+      # ----------------------------------------------------------------------
+
       queries <- c(
         queries,
         paste0(
@@ -1265,7 +1296,10 @@ idfetcher <- function(
         )
       )
 
-      # Shorter distinctive title-term + author search
+      # ----------------------------------------------------------------------
+      # Search 4: Shorter title + author
+      # ----------------------------------------------------------------------
+
       if (length(words) >= 5) {
 
         short_words <- words[
@@ -1346,44 +1380,36 @@ idfetcher <- function(
 
       if (!is.null(json)) {
 
+        ids <- NULL
+
+        if (!is.null(json$esearchresult)) {
+          ids <- json$esearchresult$idlist
+        }
+
         if (
-          !is.null(json$esearchresult) &&
-          !is.null(json$esearchresult$idlist)
+          !is.null(ids) &&
+          length(ids) > 0
         ) {
 
-          ids <- json$esearchresult$idlist
-
-          if (
-            !is.null(ids) &&
-            length(ids) > 0
-          ) {
-
-            ids <- as.character(
-              unlist(
-                ids,
-                use.names = FALSE
-              )
+          ids <- as.character(
+            unlist(
+              ids,
+              use.names = FALSE
             )
+          )
 
-            all_ids <- unique(
-              c(
-                all_ids,
-                ids
-              )
+          all_ids <- unique(
+            c(
+              all_ids,
+              ids
             )
+          )
 
-            message(
-              "  PubMed returned ",
-              length(ids),
-              " candidate PMID(s)."
-            )
-
-          } else {
-
-            message(
-              "  PubMed returned 0 candidates."
-            )
-          }
+          message(
+            "  PubMed returned ",
+            length(ids),
+            " candidate PMID(s)."
+          )
 
         } else {
 
@@ -1397,7 +1423,7 @@ idfetcher <- function(
         pubmed_delay
       )
 
-      # Once candidates exist, fetch them and test the match.
+      # Fetch candidates and test them.
       if (length(all_ids) > 0) {
 
         fetched <- fetch_pubmed_records(
@@ -1666,15 +1692,12 @@ idfetcher <- function(
       !nzchar(pmcid)
     ) {
 
-      todo[
-        [length(todo) + 1]
-      ] <- list(
-        list(
-          item = item,
-          doi = doi,
-          title = title,
-          first_author = first_author
-        )
+      # CORRECT: append a list element using [[index]]
+      todo[[length(todo) + 1]] <- list(
+        item = item,
+        doi = doi,
+        title = title,
+        first_author = first_author
       )
     }
   }
@@ -1779,9 +1802,8 @@ idfetcher <- function(
 
         if (nzchar(entry$doi)) {
 
-          doi_map[
-            [entry$doi]
-          ] <- list(entry)
+          # CORRECT: named list element using [[key]]
+          doi_map[[entry$doi]] <- entry
         }
       }
 
@@ -1820,9 +1842,8 @@ idfetcher <- function(
 
       for (doi in names(doi_map)) {
 
-        entry <- doi_map[
-          [doi]
-        ]
+        # CORRECT: named list lookup using [[key]]
+        entry <- doi_map[[doi]]
 
         item <- entry$item
 
@@ -1847,9 +1868,7 @@ idfetcher <- function(
           next
         }
 
-        record <- pmc_records[
-          [doi]
-        ]
+        record <- pmc_records[[doi]]
 
         pmid <- ""
         pmcid <- ""
@@ -2118,6 +2137,7 @@ idfetcher <- function(
             add_pmid &&
             add_pmcid
           ) {
+
             both_added <-
               both_added + 1
           }
@@ -2162,6 +2182,7 @@ idfetcher <- function(
               add_pmid &&
               add_pmcid
             ) {
+
               both_added <-
                 both_added + 1
             }
@@ -2463,6 +2484,7 @@ idfetcher <- function(
           add_pmid &&
           add_pmcid
         ) {
+
           both_added <-
             both_added + 1
         }
@@ -2507,6 +2529,7 @@ idfetcher <- function(
             add_pmid &&
             add_pmcid
           ) {
+
             both_added <-
               both_added + 1
           }
