@@ -106,7 +106,6 @@ idfetcher <- function(
   }
 
   get_field <- function(item, field) {
-
     value <- item$data[[field]]
 
     if (is.null(value) || length(value) == 0) {
@@ -123,7 +122,6 @@ idfetcher <- function(
   }
 
   normalize_doi <- function(doi) {
-
     if (is.null(doi) || length(doi) == 0) {
       return("")
     }
@@ -145,14 +143,11 @@ idfetcher <- function(
     )
 
     for (prefix in prefixes) {
-
       if (startsWith(doi, prefix)) {
-
         doi <- substring(
           doi,
           nchar(prefix) + 1
         )
-
         break
       }
     }
@@ -167,7 +162,6 @@ idfetcher <- function(
   }
 
   normalize_title <- function(title) {
-
     if (is.null(title) || length(title) == 0) {
       return("")
     }
@@ -227,7 +221,6 @@ idfetcher <- function(
   }
 
   title_tokens <- function(title) {
-
     normalized <- normalize_title(title)
 
     if (!nzchar(normalized)) {
@@ -239,13 +232,10 @@ idfetcher <- function(
       "[[:space:]]+"
     )[[1]]
 
-    tokens[
-      nchar(tokens) >= 3
-    ]
+    tokens[nchar(tokens) >= 3]
   }
 
   title_similarity <- function(x, y) {
-
     x <- normalize_title(x)
     y <- normalize_title(y)
 
@@ -275,7 +265,6 @@ idfetcher <- function(
   }
 
   get_first_author <- function(item) {
-
     creators <- item$data$creators
 
     if (is.null(creators) || length(creators) == 0) {
@@ -283,7 +272,6 @@ idfetcher <- function(
     }
 
     for (creator in creators) {
-
       creator_type <- creator$creatorType %||% ""
 
       if (
@@ -293,7 +281,6 @@ idfetcher <- function(
           "author"
         )
       ) {
-
         last_name <- creator$lastName %||% ""
 
         if (
@@ -301,7 +288,6 @@ idfetcher <- function(
           length(last_name) > 0 &&
           !is.na(last_name[1])
         ) {
-
           last_name <- trimws(
             as.character(last_name[1])
           )
@@ -318,7 +304,6 @@ idfetcher <- function(
           length(name) > 0 &&
           !is.na(name[1])
         ) {
-
           name <- trimws(
             as.character(name[1])
           )
@@ -334,7 +319,6 @@ idfetcher <- function(
   }
 
   normalize_author <- function(author) {
-
     if (is.null(author) || length(author) == 0) {
       return("")
     }
@@ -373,7 +357,6 @@ idfetcher <- function(
       stop("NCBI request parameters must be a list.")
     }
 
-    # Ensure every query parameter is atomic.
     params <- lapply(
       params,
       function(x) {
@@ -387,10 +370,12 @@ idfetcher <- function(
         }
 
         if (length(x) > 1) {
-          return(paste(
-            as.character(x),
-            collapse = ","
-          ))
+          return(
+            paste(
+              as.character(x),
+              collapse = ","
+            )
+          )
         }
 
         as.character(x)
@@ -399,47 +384,49 @@ idfetcher <- function(
 
     for (attempt in seq_len(max_retries)) {
 
-      response <- tryCatch({
+      response <- tryCatch(
+        {
 
-        req <- httr2::request(url)
+          req <- httr2::request(url)
 
-        req <- httr2::req_headers(
-          req,
-          `User-Agent` = user_agent
-        )
+          req <- httr2::req_headers(
+            req,
+            `User-Agent` = user_agent
+          )
 
-        # Add query parameters explicitly.
-        for (param_name in names(params)) {
+          for (param_name in names(params)) {
 
-          param_value <- params[[param_name]]
+            param_value <- params[[param_name]]
 
-          if (
-            !is.null(param_value) &&
-            length(param_value) > 0
-          ) {
+            if (
+              !is.null(param_value) &&
+              length(param_value) > 0
+            ) {
 
-            req <- httr2::req_url_query(
-              req,
-              .args = setNames(
-                list(param_value),
-                param_name
+              req <- httr2::req_url_query(
+                req,
+                .args = setNames(
+                  list(param_value),
+                  param_name
+                )
               )
-            )
+            }
           }
+
+          httr2::req_perform(req)
+
+        },
+        error = function(e) {
+
+          message(
+            request_name,
+            " error: ",
+            conditionMessage(e)
+          )
+
+          NULL
         }
-
-        httr2::req_perform(req)
-
-      }, error = function(e) {
-
-        message(
-          request_name,
-          " error: ",
-          conditionMessage(e)
-        )
-
-        NULL
-      })
+      )
 
       if (is.null(response)) {
 
@@ -943,9 +930,8 @@ idfetcher <- function(
             nzchar(id_value)
           ) {
 
-            article_ids[
-              [tolower(id_type)]
-            ] <- id_value
+            article_ids[[tolower(id_type)]] <-
+              id_value
           }
         }
       }
@@ -1071,8 +1057,6 @@ idfetcher <- function(
       }
     }
 
-    # Title is the primary evidence.
-    # First-author agreement provides an additional boost.
     score <- title_score
 
     if (author_match) {
@@ -1128,16 +1112,10 @@ idfetcher <- function(
       score_values
     )
 
-    best_record <- records[
-      [best_index]
-    ]
+    best_record <- records[[best_index]]
 
-    best_score <- scores[
-      [best_index]
-    ]
+    best_score <- scores[[best_index]]
 
-    # Require a very strong title match.
-    # Author agreement is used to resolve candidates and improve confidence.
     if (
       best_score$title_score >= 0.94
     ) {
@@ -1154,13 +1132,20 @@ idfetcher <- function(
       if (
         best_score$title_score >= 0.999
       ) {
+
         best_record$match_type <- "exact_title"
+
       } else if (
         best_score$author_match
       ) {
-        best_record$match_type <- "strong_title_author"
+
+        best_record$match_type <-
+          "strong_title_author"
+
       } else {
-        best_record$match_type <- "strong_title"
+
+        best_record$match_type <-
+          "strong_title"
       }
 
       return(best_record)
@@ -1205,9 +1190,6 @@ idfetcher <- function(
     # ------------------------------------------------------------------------
     # Search 2:
     # Title terms + first author.
-    #
-    # This is especially useful when PubMed punctuation or title formatting
-    # prevents the exact phrase search from returning the expected article.
     # ------------------------------------------------------------------------
 
     words <- title_tokens(
@@ -1216,7 +1198,6 @@ idfetcher <- function(
 
     if (length(words) > 0) {
 
-      # Use the first 10 informative words.
       title_words <- words[
         seq_len(
           min(
@@ -1264,9 +1245,6 @@ idfetcher <- function(
       # ----------------------------------------------------------------------
       # Search 4:
       # First distinctive title terms + author.
-      #
-      # This is deliberately shorter and can recover PubMed records when
-      # one or more title words differ between Zotero and PubMed.
       # ----------------------------------------------------------------------
 
       if (length(words) >= 5) {
@@ -1375,6 +1353,7 @@ idfetcher <- function(
             length(ids),
             " candidate PMID(s)."
           )
+
         } else {
 
           message(
@@ -1387,7 +1366,6 @@ idfetcher <- function(
         pubmed_delay
       )
 
-      # Once we have candidates, fetch them and see if one is strong enough.
       if (length(all_ids) > 0) {
 
         fetched <- fetch_pubmed_records(
@@ -1656,15 +1634,11 @@ idfetcher <- function(
       !nzchar(pmcid)
     ) {
 
-      todo[
-        [length(todo) + 1]
-      ] <- list(
-        list(
-          item = item,
-          doi = doi,
-          title = title,
-          first_author = first_author
-        )
+      todo[[length(todo) + 1]] <- list(
+        item = item,
+        doi = doi,
+        title = title,
+        first_author = first_author
       )
     }
   }
@@ -1769,9 +1743,7 @@ idfetcher <- function(
 
         if (nzchar(entry$doi)) {
 
-          doi_map[
-            [entry$doi]
-          ] <- list(entry)
+          doi_map[[entry$doi]] <- entry
         }
       }
 
@@ -1810,9 +1782,7 @@ idfetcher <- function(
 
       for (doi in names(doi_map)) {
 
-        entry <- doi_map[
-          [doi]
-        ]
+        entry <- doi_map[[doi]]
 
         item <- entry$item
 
@@ -1837,9 +1807,7 @@ idfetcher <- function(
           next
         }
 
-        record <- pmc_records[
-          [doi]
-        ]
+        record <- pmc_records[[doi]]
 
         pmid <- ""
         pmcid <- ""
@@ -2114,61 +2082,64 @@ idfetcher <- function(
 
         } else {
 
-          tryCatch({
+          tryCatch(
+            {
 
-            if (add_pmid) {
+              if (add_pmid) {
 
-              item$data$PMID <-
-                as.character(
-                  final_pmid
-                )
+                item$data$PMID <-
+                  as.character(
+                    final_pmid
+                  )
+              }
+
+              if (add_pmcid) {
+
+                item$data$PMCID <-
+                  as.character(
+                    final_pmcid
+                  )
+              }
+
+              update_zotero_item(
+                item
+              )
+
+              updated <- updated + 1
+
+              if (add_pmid) {
+                pmids_added <-
+                  pmids_added + 1
+              }
+
+              if (add_pmcid) {
+                pmcids_added <-
+                  pmcids_added + 1
+              }
+
+              if (
+                add_pmid &&
+                add_pmcid
+              ) {
+                both_added <-
+                  both_added + 1
+              }
+
+              message(
+                "  UPDATED Zotero."
+              )
+
+            },
+            error = function(e) {
+
+              errors <<- errors + 1
+
+              message(
+                "  ZOTERO ERROR: ",
+                conditionMessage(e)
+              )
             }
-
-            if (add_pmcid) {
-
-              item$data$PMCID <-
-                as.character(
-                  final_pmcid
-                )
-            }
-
-            update_zotero_item(
-              item
-            )
-
-            updated <- updated + 1
-
-            if (add_pmid) {
-              pmids_added <-
-                pmids_added + 1
-            }
-
-            if (add_pmcid) {
-              pmcids_added <-
-                pmcids_added + 1
-            }
-
-            if (
-              add_pmid &&
-              add_pmcid
-            ) {
-              both_added <-
-                both_added + 1
-            }
-
-            message(
-              "  UPDATED Zotero."
-            )
-
-          }, error = function(e) {
-
-            errors <<- errors + 1
-
-            message(
-              "  ZOTERO ERROR: ",
-              conditionMessage(e)
-            )
-          })
+          )
         }
 
         Sys.sleep(
@@ -2459,61 +2430,64 @@ idfetcher <- function(
 
       } else {
 
-        tryCatch({
+        tryCatch(
+          {
 
-          if (add_pmid) {
+            if (add_pmid) {
 
-            item$data$PMID <-
-              as.character(
-                final_pmid
-              )
+              item$data$PMID <-
+                as.character(
+                  final_pmid
+                )
+            }
+
+            if (add_pmcid) {
+
+              item$data$PMCID <-
+                as.character(
+                  final_pmcid
+                )
+            }
+
+            update_zotero_item(
+              item
+            )
+
+            updated <- updated + 1
+
+            if (add_pmid) {
+              pmids_added <-
+                pmids_added + 1
+            }
+
+            if (add_pmcid) {
+              pmcids_added <-
+                pmcids_added + 1
+            }
+
+            if (
+              add_pmid &&
+              add_pmcid
+            ) {
+              both_added <-
+                both_added + 1
+            }
+
+            message(
+              "  UPDATED Zotero."
+            )
+
+          },
+          error = function(e) {
+
+            errors <<- errors + 1
+
+            message(
+              "  ZOTERO ERROR: ",
+              conditionMessage(e)
+            )
           }
-
-          if (add_pmcid) {
-
-            item$data$PMCID <-
-              as.character(
-                final_pmcid
-              )
-          }
-
-          update_zotero_item(
-            item
-          )
-
-          updated <- updated + 1
-
-          if (add_pmid) {
-            pmids_added <-
-              pmids_added + 1
-          }
-
-          if (add_pmcid) {
-            pmcids_added <-
-              pmcids_added + 1
-          }
-
-          if (
-            add_pmid &&
-            add_pmcid
-          ) {
-            both_added <-
-              both_added + 1
-          }
-
-          message(
-            "  UPDATED Zotero."
-          )
-
-        }, error = function(e) {
-
-          errors <<- errors + 1
-
-          message(
-            "  ZOTERO ERROR: ",
-            conditionMessage(e)
-          )
-        })
+        )
       }
 
       Sys.sleep(
@@ -2528,6 +2502,7 @@ idfetcher <- function(
 
   message("")
   message("")
+
   message(
     "======================================================================"
   )
