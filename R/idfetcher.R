@@ -3,8 +3,10 @@
 #' Retrieves PMID and PMCID identifiers for Zotero journal articles using:
 #'   1. PMC ID Converter for DOI-based lookups
 #'   2. PubMed DOI lookup when PMC does not provide a PMID
-#'   3. PubMed title + first-author searches
-#'   4. PubMed title-only searches as a final fallback
+#'   3. PMID -> PMC ID Converter when a PMID is found
+#'   4. PubMed exact-title + author searches
+#'   5. PubMed title proximity searches
+#'   6. PubMed broader title searches as a final fallback
 #'
 #' Identifiers are written only to Zotero's PMID and PMCID fields.
 #'
@@ -106,6 +108,7 @@ idfetcher <- function(
   }
 
   get_field <- function(item, field) {
+
     value <- item$data[[field]]
 
     if (is.null(value) || length(value) == 0) {
@@ -122,6 +125,7 @@ idfetcher <- function(
   }
 
   normalize_doi <- function(doi) {
+
     if (is.null(doi) || length(doi) == 0) {
       return("")
     }
@@ -143,11 +147,14 @@ idfetcher <- function(
     )
 
     for (prefix in prefixes) {
+
       if (startsWith(doi, prefix)) {
+
         doi <- substring(
           doi,
           nchar(prefix) + 1
         )
+
         break
       }
     }
@@ -162,6 +169,7 @@ idfetcher <- function(
   }
 
   normalize_title <- function(title) {
+
     if (is.null(title) || length(title) == 0) {
       return("")
     }
@@ -221,6 +229,7 @@ idfetcher <- function(
   }
 
   title_tokens <- function(title) {
+
     normalized <- normalize_title(title)
 
     if (!nzchar(normalized)) {
@@ -238,6 +247,7 @@ idfetcher <- function(
   }
 
   title_similarity <- function(x, y) {
+
     x <- normalize_title(x)
     y <- normalize_title(y)
 
@@ -267,6 +277,7 @@ idfetcher <- function(
   }
 
   get_first_author <- function(item) {
+
     creators <- item$data$creators
 
     if (is.null(creators) || length(creators) == 0) {
@@ -274,6 +285,7 @@ idfetcher <- function(
     }
 
     for (creator in creators) {
+
       creator_type <- creator$creatorType %||% ""
 
       if (
@@ -283,6 +295,7 @@ idfetcher <- function(
           "author"
         )
       ) {
+
         last_name <- creator$lastName %||% ""
 
         if (
@@ -290,6 +303,7 @@ idfetcher <- function(
           length(last_name) > 0 &&
           !is.na(last_name[1])
         ) {
+
           last_name <- trimws(
             as.character(last_name[1])
           )
@@ -306,6 +320,7 @@ idfetcher <- function(
           length(name) > 0 &&
           !is.na(name[1])
         ) {
+
           name <- trimws(
             as.character(name[1])
           )
@@ -321,6 +336,7 @@ idfetcher <- function(
   }
 
   normalize_author <- function(author) {
+
     if (is.null(author) || length(author) == 0) {
       return("")
     }
@@ -346,13 +362,8 @@ idfetcher <- function(
   # Generic NCBI request
   #
   # IMPORTANT:
-  # httr2::req_url_query() accepts query parameters through ..., not
-  # through an ".args" list. The previous implementation passed a list
-  # incorrectly, producing:
-  #
-  # "All elements of `...` must be either an atomic vector or NULL."
-  #
-  # This version uses do.call() so each query parameter is passed correctly.
+  # httr2::req_url_query() uses dynamic dots.
+  # A named list must therefore be spliced with !!!params.
   # --------------------------------------------------------------------------
 
   ncbi_request <- function(
@@ -365,15 +376,22 @@ idfetcher <- function(
     parse <- match.arg(parse)
 
     if (!is.list(params)) {
-      stop("NCBI request parameters must be a list.")
+      stop(
+        "NCBI request parameters must be a list."
+      )
     }
+
+    params <- params[
+      !vapply(
+        params,
+        is.null,
+        logical(1)
+      )
+    ]
 
     params <- lapply(
       params,
       function(x) {
-        if (is.null(x)) {
-          return(NULL)
-        }
 
         if (length(x) == 0) {
           return(NULL)
@@ -394,56 +412,35 @@ idfetcher <- function(
 
     for (attempt in seq_len(max_retries)) {
 
-      response <- tryCatch(
-        {
+      response <- tryCatch({
 
-          req <- httr2::request(url)
+        req <- httr2::request(url)
 
-          req <- httr2::req_headers(
+        req <- httr2::req_headers(
+          req,
+          `User-Agent` = user_agent
+        )
+
+        if (length(params) > 0) {
+
+          req <- httr2::req_url_query(
             req,
-            `User-Agent` = user_agent
+            !!!params
           )
-
-          for (param_name in names(params)) {
-
-            param_value <- params[[param_name]]
-
-            if (
-              !is.null(param_value) &&
-              length(param_value) > 0
-            ) {
-
-              query_args <- list(
-                req,
-                param_value
-              )
-
-              names(query_args) <- c(
-                ".req",
-                param_name
-              )
-
-              req <- do.call(
-                httr2::req_url_query,
-                query_args
-              )
-            }
-          }
-
-          httr2::req_perform(req)
-
-        },
-        error = function(e) {
-
-          message(
-            request_name,
-            " error: ",
-            conditionMessage(e)
-          )
-
-          NULL
         }
-      )
+
+        httr2::req_perform(req)
+
+      }, error = function(e) {
+
+        message(
+          request_name,
+          " error: ",
+          conditionMessage(e)
+        )
+
+        NULL
+      })
 
       if (is.null(response)) {
 
@@ -585,9 +582,8 @@ idfetcher <- function(
     params <- list(
       db = "pubmed",
       term = paste0(
-        "\"",
         doi,
-        "\"[DOI]"
+        "[DOI]"
       ),
       retmode = "json",
       retmax = "10",
@@ -621,7 +617,7 @@ idfetcher <- function(
 
     ids <- json$esearchresult$idlist
 
-    if (is.null(ids) || length(ids) == 0) {
+    if (length(ids) == 0) {
       return(NA_character_)
     }
 
@@ -638,40 +634,50 @@ idfetcher <- function(
   }
 
   # --------------------------------------------------------------------------
-  # PMC DOI batch lookup
+  # PMC ID Converter
+  #
+  # Can convert DOI -> PMID/PMCID and PMID -> PMCID.
   # --------------------------------------------------------------------------
 
-  get_pmc_records <- function(dois) {
+  get_pmc_records <- function(
+    ids,
+    idtype = NULL
+  ) {
 
-    if (length(dois) == 0) {
+    if (length(ids) == 0) {
       return(list())
     }
 
-    dois <- unique(
-      vapply(
-        dois,
-        normalize_doi,
-        character(1)
-      )
-    )
+    ids <- as.character(ids)
 
-    dois <- dois[
-      nzchar(dois)
+    ids <- ids[
+      !is.na(ids) &
+        nzchar(trimws(ids))
     ]
 
-    if (length(dois) == 0) {
+    if (length(ids) == 0) {
       return(list())
     }
+
+    ids <- unique(
+      trimws(ids)
+    )
 
     params <- list(
       ids = paste(
-        dois,
+        ids,
         collapse = ","
       ),
-      idtype = "doi",
       format = "json",
       tool = "idfetcher"
     )
+
+    if (
+      !is.null(idtype) &&
+      nzchar(idtype)
+    ) {
+      params$idtype <- idtype
+    }
 
     if (
       !is.null(ncbi_api_key) &&
@@ -693,7 +699,10 @@ idfetcher <- function(
 
     records <- json$records
 
-    if (is.null(records) || length(records) == 0) {
+    if (
+      is.null(records) ||
+      length(records) == 0
+    ) {
       return(list())
     }
 
@@ -705,15 +714,14 @@ idfetcher <- function(
         next
       }
 
-      record_doi <- normalize_doi(
-        record$doi %||%
-          record$requested_id %||%
-          record[["requested-id"]] %||%
-          ""
+      requested_id <- record[["requested-id"]] %||% ""
+
+      requested_id <- trimws(
+        as.character(requested_id)
       )
 
-      if (nzchar(record_doi)) {
-        result[[record_doi]] <- record
+      if (nzchar(requested_id)) {
+        result[[requested_id]] <- record
       }
     }
 
@@ -735,7 +743,8 @@ idfetcher <- function(
     )
 
     pmids <- pmids[
-      nzchar(pmids)
+      !is.na(pmids) &
+        nzchar(trimws(pmids))
     ]
 
     if (length(pmids) == 0) {
@@ -827,8 +836,11 @@ idfetcher <- function(
           "xml_missing"
         )
       ) {
+
         pmid <- trimws(
-          xml2::xml_text(pmid_node)
+          xml2::xml_text(
+            pmid_node
+          )
         )
       }
 
@@ -840,8 +852,11 @@ idfetcher <- function(
           "xml_missing"
         )
       ) {
+
         title <- trimws(
-          xml2::xml_text(title_node)
+          xml2::xml_text(
+            title_node
+          )
         )
       }
 
@@ -879,8 +894,11 @@ idfetcher <- function(
             "xml_missing"
           )
         ) {
+
           year <- trimws(
-            xml2::xml_text(year_node)
+            xml2::xml_text(
+              year_node
+            )
           )
         }
 
@@ -890,8 +908,11 @@ idfetcher <- function(
             "xml_missing"
           )
         ) {
+
           month <- trimws(
-            xml2::xml_text(month_node)
+            xml2::xml_text(
+              month_node
+            )
           )
         }
 
@@ -901,8 +922,11 @@ idfetcher <- function(
             "xml_missing"
           )
         ) {
+
           day <- trimws(
-            xml2::xml_text(day_node)
+            xml2::xml_text(
+              day_node
+            )
           )
         }
 
@@ -917,6 +941,7 @@ idfetcher <- function(
         ]
 
         if (length(date_parts) > 0) {
+
           pub_date <- paste(
             date_parts,
             collapse = "-"
@@ -950,13 +975,13 @@ idfetcher <- function(
             nzchar(id_value)
           ) {
 
-            # FIXED: this must be [[key]], not [ [key] ].
-            article_ids[[tolower(id_type)]] <- id_value
+            article_ids[
+              [tolower(id_type)]
+            ] <- id_value
           }
         }
       }
 
-      # First author
       first_author <- ""
 
       author_node <- xml2::xml_find_first(
@@ -989,7 +1014,9 @@ idfetcher <- function(
         ) {
 
           first_author <- trimws(
-            xml2::xml_text(last_name_node)
+            xml2::xml_text(
+              last_name_node
+            )
           )
 
         } else if (
@@ -1000,7 +1027,9 @@ idfetcher <- function(
         ) {
 
           first_author <- trimws(
-            xml2::xml_text(collective_node)
+            xml2::xml_text(
+              collective_node
+            )
           )
         }
       }
@@ -1076,6 +1105,7 @@ idfetcher <- function(
     score <- title_score
 
     if (author_match) {
+
       score <- min(
         1,
         score + 0.05
@@ -1106,6 +1136,7 @@ idfetcher <- function(
     scores <- lapply(
       records,
       function(record) {
+
         score_pubmed_record(
           zotero_title,
           zotero_author,
@@ -1128,48 +1159,228 @@ idfetcher <- function(
       score_values
     )
 
-    # FIXED: use [[best_index]], not [ [best_index] ].
     best_record <- records[[best_index]]
-
-    # FIXED: use [[best_index]], not [ [best_index] ].
     best_score <- scores[[best_index]]
 
+    # Require a very strong title match.
     if (
-      best_score$title_score >= 0.94
+      best_score$title_score < 0.94
     ) {
-
-      best_record$match_score <-
-        best_score$score
-
-      best_record$title_score <-
-        best_score$title_score
-
-      best_record$author_match <-
-        best_score$author_match
-
-      if (
-        best_score$title_score >= 0.999
-      ) {
-
-        best_record$match_type <- "exact_title"
-
-      } else if (
-        best_score$author_match
-      ) {
-
-        best_record$match_type <-
-          "strong_title_author"
-
-      } else {
-
-        best_record$match_type <-
-          "strong_title"
-      }
-
-      return(best_record)
+      return(NULL)
     }
 
-    NULL
+    best_record$match_score <-
+      best_score$score
+
+    best_record$title_score <-
+      best_score$title_score
+
+    best_record$author_match <-
+      best_score$author_match
+
+    if (
+      best_score$title_score >= 0.999
+    ) {
+
+      best_record$match_type <-
+        "exact_title"
+
+    } else if (
+      best_score$author_match
+    ) {
+
+      best_record$match_type <-
+        "strong_title_author"
+
+    } else {
+
+      best_record$match_type <-
+        "strong_title"
+    }
+
+    best_record
+  }
+
+  # --------------------------------------------------------------------------
+  # Build PubMed title queries
+  # --------------------------------------------------------------------------
+
+  build_pubmed_title_queries <- function(
+    title,
+    first_author = ""
+  ) {
+
+    normalized <- normalize_title(
+      title
+    )
+
+    if (!nzchar(normalized)) {
+      return(character(0))
+    }
+
+    # Remove literal quotation marks from the query phrase.
+    clean_title <- gsub(
+      "\"",
+      "",
+      trimws(title),
+      fixed = TRUE
+    )
+
+    queries <- character(0)
+
+    # ------------------------------------------------------------------------
+    # Query 1: exact title
+    # ------------------------------------------------------------------------
+
+    queries <- c(
+      queries,
+      paste0(
+        "\"",
+        clean_title,
+        "\"[Title]"
+      )
+    )
+
+    # ------------------------------------------------------------------------
+    # Query 2: exact title + first author
+    # ------------------------------------------------------------------------
+
+    author <- trimws(
+      as.character(first_author)
+    )
+
+    author <- gsub(
+      "\"",
+      "",
+      author,
+      fixed = TRUE
+    )
+
+    if (nzchar(author)) {
+
+      queries <- c(
+        queries,
+        paste0(
+          "\"",
+          clean_title,
+          "\"[Title] AND ",
+          author,
+          "[Author]"
+        )
+      )
+    }
+
+    words <- title_tokens(
+      title
+    )
+
+    if (length(words) > 0) {
+
+      # ----------------------------------------------------------------------
+      # Query 3: proximity search.
+      #
+      # PubMed supports:
+      # "term1 term2"[Title:~N]
+      #
+      # This allows small differences in title word order or wording.
+      # ----------------------------------------------------------------------
+
+      proximity_words <- words[
+        seq_len(
+          min(
+            length(words),
+            10
+          )
+        )
+      ]
+
+      proximity_phrase <- paste(
+        proximity_words,
+        collapse = " "
+      )
+
+      queries <- c(
+        queries,
+        paste0(
+          "\"",
+          proximity_phrase,
+          "\"[Title:~5]"
+        )
+      )
+
+      # ----------------------------------------------------------------------
+      # Query 4: distinctive title terms, each explicitly restricted to Title.
+      # ----------------------------------------------------------------------
+
+      broad_words <- words[
+        seq_len(
+          min(
+            length(words),
+            8
+          )
+        )
+      ]
+
+      broad_terms <- paste0(
+        broad_words,
+        "[Title]"
+      )
+
+      broad_query <- paste(
+        broad_terms,
+        collapse = " AND "
+      )
+
+      queries <- c(
+        queries,
+        broad_query
+      )
+
+      # ----------------------------------------------------------------------
+      # Query 5: shorter distinctive title-term search + author.
+      # ----------------------------------------------------------------------
+
+      if (
+        length(words) >= 4 &&
+        nzchar(author)
+      ) {
+
+        short_words <- words[
+          seq_len(
+            min(
+              length(words),
+              5
+            )
+          )
+        ]
+
+        short_terms <- paste0(
+          short_words,
+          "[Title]"
+        )
+
+        short_query <- paste(
+          short_terms,
+          collapse = " AND "
+        )
+
+        queries <- c(
+          queries,
+          paste0(
+            short_query,
+            " AND ",
+            author,
+            "[Author]"
+          )
+        )
+      }
+    }
+
+    unique(
+      queries[
+        nzchar(queries)
+      ]
+    )
   }
 
   # --------------------------------------------------------------------------
@@ -1181,111 +1392,20 @@ idfetcher <- function(
     first_author = ""
   ) {
 
-    normalized <- normalize_title(
-      title
+    queries <- build_pubmed_title_queries(
+      title,
+      first_author
     )
 
-    if (!nzchar(normalized)) {
+    if (length(queries) == 0) {
       return(NULL)
     }
-
-    queries <- character(0)
-
-    # Exact title phrase
-    queries <- c(
-      queries,
-      paste0(
-        "\"",
-        title,
-        "\"[Title]"
-      )
-    )
-
-    words <- title_tokens(
-      title
-    )
-
-    if (length(words) > 0) {
-
-      title_words <- words[
-        seq_len(
-          min(
-            length(words),
-            10
-          )
-        )
-      ]
-
-      title_term <- paste(
-        title_words,
-        collapse = " AND "
-      )
-
-      title_author <- normalize_author(
-        first_author
-      )
-
-      if (nzchar(title_author)) {
-
-        queries <- c(
-          queries,
-          paste0(
-            title_term,
-            "[Title] AND ",
-            first_author,
-            "[Author]"
-          )
-        )
-      }
-
-      queries <- c(
-        queries,
-        paste0(
-          title_term,
-          "[Title]"
-        )
-      )
-
-      if (length(words) >= 5) {
-
-        short_words <- words[
-          seq_len(
-            min(
-              length(words),
-              6
-            )
-          )
-        ]
-
-        short_term <- paste(
-          short_words,
-          collapse = " AND "
-        )
-
-        if (nzchar(title_author)) {
-
-          queries <- c(
-            queries,
-            paste0(
-              short_term,
-              "[Title] AND ",
-              first_author,
-              "[Author]"
-            )
-          )
-        }
-      }
-    }
-
-    queries <- unique(queries)
 
     all_ids <- character(0)
 
     for (query_index in seq_along(queries)) {
 
-      query <- queries[
-        query_index
-      ]
+      query <- queries[[query_index]]
 
       message(
         "  PubMed query ",
@@ -1301,6 +1421,7 @@ idfetcher <- function(
         term = query,
         retmode = "json",
         retmax = "50",
+        sort = "relevance",
         tool = "idfetcher"
       )
 
@@ -1320,7 +1441,11 @@ idfetcher <- function(
 
       if (!is.null(json)) {
 
-        ids <- json$esearchresult$idlist
+        ids <- NULL
+
+        if (!is.null(json$esearchresult)) {
+          ids <- json$esearchresult$idlist
+        }
 
         if (
           !is.null(ids) &&
@@ -1359,6 +1484,7 @@ idfetcher <- function(
         pubmed_delay
       )
 
+      # Fetch accumulated candidates after each query.
       if (length(all_ids) > 0) {
 
         fetched <- fetch_pubmed_records(
@@ -1411,7 +1537,9 @@ idfetcher <- function(
         "/items"
       )
 
-      req <- httr2::request(url)
+      req <- httr2::request(
+        url
+      )
 
       req <- httr2::req_headers(
         req,
@@ -1501,7 +1629,9 @@ idfetcher <- function(
       item_key
     )
 
-    req <- httr2::request(url)
+    req <- httr2::request(
+      url
+    )
 
     req <- httr2::req_method(
       req,
@@ -1686,7 +1816,9 @@ idfetcher <- function(
   doi_todo <- todo[
     vapply(
       todo,
-      function(x) nzchar(x$doi),
+      function(x) {
+        nzchar(x$doi)
+      },
       logical(1)
     )
   ]
@@ -1732,7 +1864,6 @@ idfetcher <- function(
 
         if (nzchar(entry$doi)) {
 
-          # FIXED: proper list indexing.
           doi_map[[entry$doi]] <- entry
         }
       }
@@ -1749,7 +1880,8 @@ idfetcher <- function(
 
       pmc_records <- tryCatch(
         get_pmc_records(
-          names(doi_map)
+          names(doi_map),
+          idtype = "doi"
         ),
         error = function(e) {
 
@@ -1802,9 +1934,14 @@ idfetcher <- function(
         pmid <- ""
         pmcid <- ""
 
+        # --------------------------------------------------------------------
+        # PMC DOI result
+        # --------------------------------------------------------------------
+
         if (!is.null(record)) {
 
-          doi_lookups <- doi_lookups + 1
+          doi_lookups <-
+            doi_lookups + 1
 
           pmid <- record$pmid %||% ""
           pmcid <- record$pmcid %||% ""
@@ -1816,6 +1953,22 @@ idfetcher <- function(
           pmcid <- trimws(
             as.character(pmcid)
           )
+
+          if (nzchar(pmid)) {
+
+            message(
+              "  PMC DOI lookup PMID -> ",
+              pmid
+            )
+          }
+
+          if (nzchar(pmcid)) {
+
+            message(
+              "  PMC DOI lookup PMCID -> ",
+              pmcid
+            )
+          }
         }
 
         # --------------------------------------------------------------------
@@ -1851,7 +2004,64 @@ idfetcher <- function(
         }
 
         # --------------------------------------------------------------------
-        # PubMed title + first-author fallback
+        # If PMID is known, use PMC converter to obtain PMCID.
+        # --------------------------------------------------------------------
+
+        if (
+          nzchar(pmid) &&
+          !nzchar(pmcid)
+        ) {
+
+          message(
+            "PMC lookup by PMID: ",
+            pmid
+          )
+
+          pmid_record <- tryCatch(
+            get_pmc_records(
+              pmid,
+              idtype = "pmid"
+            ),
+            error = function(e) {
+
+              message(
+                "PMC PMID lookup failed: ",
+                conditionMessage(e)
+              )
+
+              errors <<- errors + 1
+
+              list()
+            }
+          )
+
+          pmid_pmc_record <- pmid_record[[pmid]]
+
+          if (!is.null(pmid_pmc_record)) {
+
+            converted_pmcid <-
+              pmid_pmc_record$pmcid %||% ""
+
+            converted_pmcid <- trimws(
+              as.character(converted_pmcid)
+            )
+
+            if (nzchar(converted_pmcid)) {
+
+              pmcid <- converted_pmcid
+
+              message(
+                "  PMCID -> ",
+                pmcid
+              )
+            }
+          }
+        }
+
+        # --------------------------------------------------------------------
+        # PubMed title fallback.
+        #
+        # This is only necessary if we still lack an identifier.
         # --------------------------------------------------------------------
 
         if (
@@ -1875,9 +2085,20 @@ idfetcher <- function(
             )
           }
 
-          title_record <- search_pubmed_by_title(
-            entry$title,
-            entry$first_author
+          title_record <- tryCatch(
+            search_pubmed_by_title(
+              entry$title,
+              entry$first_author
+            ),
+            error = function(e) {
+
+              message(
+                "PubMed title search failed: ",
+                conditionMessage(e)
+              )
+
+              NULL
+            }
           )
 
           if (!is.null(title_record)) {
@@ -1898,6 +2119,11 @@ idfetcher <- function(
               )
             )
 
+            message(
+              "  Match type: ",
+              title_record$match_type
+            )
+
             if (
               nzchar(title_record$first_author)
             ) {
@@ -1908,22 +2134,14 @@ idfetcher <- function(
               )
             }
 
-            if (
-              isTRUE(
-                title_record$author_match
+            message(
+              "  First-author match: ",
+              ifelse(
+                isTRUE(title_record$author_match),
+                "YES",
+                "NO"
               )
-            ) {
-
-              message(
-                "  First-author match: YES"
-              )
-
-            } else {
-
-              message(
-                "  First-author match: NO"
-              )
-            }
+            )
 
             if (
               !nzchar(pmid) &&
@@ -1939,6 +2157,49 @@ idfetcher <- function(
             ) {
 
               pmcid <- title_record$pmcid
+            }
+
+            # If title search supplied a PMID but no PMCID,
+            # use the PMC converter before writing.
+            if (
+              nzchar(pmid) &&
+              !nzchar(pmcid)
+            ) {
+
+              pmid_record <- tryCatch(
+                get_pmc_records(
+                  pmid,
+                  idtype = "pmid"
+                ),
+                error = function(e) {
+
+                  message(
+                    "PMC PMID lookup failed: ",
+                    conditionMessage(e)
+                  )
+
+                  errors <<- errors + 1
+
+                  list()
+                }
+              )
+
+              pmid_pmc_record <- pmid_record[[pmid]]
+
+              if (!is.null(pmid_pmc_record)) {
+
+                converted_pmcid <-
+                  pmid_pmc_record$pmcid %||% ""
+
+                converted_pmcid <- trimws(
+                  as.character(converted_pmcid)
+                )
+
+                if (nzchar(converted_pmcid)) {
+
+                  pmcid <- converted_pmcid
+                }
+              }
             }
 
             message(
@@ -2077,65 +2338,64 @@ idfetcher <- function(
 
         } else {
 
-          tryCatch(
-            {
+          tryCatch({
 
-              if (add_pmid) {
+            if (add_pmid) {
 
-                item$data$PMID <-
-                  as.character(
-                    final_pmid
-                  )
-              }
-
-              if (add_pmcid) {
-
-                item$data$PMCID <-
-                  as.character(
-                    final_pmcid
-                  )
-              }
-
-              update_zotero_item(
-                item
-              )
-
-              updated <- updated + 1
-
-              if (add_pmid) {
-                pmids_added <-
-                  pmids_added + 1
-              }
-
-              if (add_pmcid) {
-                pmcids_added <-
-                  pmcids_added + 1
-              }
-
-              if (
-                add_pmid &&
-                add_pmcid
-              ) {
-
-                both_added <-
-                  both_added + 1
-              }
-
-              message(
-                "  UPDATED Zotero."
-              )
-
-            },
-            error = function(e) {
-
-              errors <<- errors + 1
-
-              message(
-                "  ZOTERO ERROR: ",
-                conditionMessage(e)
-              )
+              item$data$PMID <-
+                as.character(
+                  final_pmid
+                )
             }
-          )
+
+            if (add_pmcid) {
+
+              item$data$PMCID <-
+                as.character(
+                  final_pmcid
+                )
+            }
+
+            update_zotero_item(
+              item
+            )
+
+            updated <- updated + 1
+
+            if (add_pmid) {
+
+              pmids_added <-
+                pmids_added + 1
+            }
+
+            if (add_pmcid) {
+
+              pmcids_added <-
+                pmcids_added + 1
+            }
+
+            if (
+              add_pmid &&
+              add_pmcid
+            ) {
+
+              both_added <-
+                both_added + 1
+            }
+
+            message(
+              "  UPDATED Zotero."
+            )
+
+          }, error = function(e) {
+
+            errors <<- errors + 1
+
+            message(
+              "  ZOTERO ERROR: ",
+              conditionMessage(e)
+            )
+          })
         }
 
         Sys.sleep(
@@ -2156,7 +2416,9 @@ idfetcher <- function(
   no_doi_todo <- todo[
     vapply(
       todo,
-      function(x) !nzchar(x$doi),
+      function(x) {
+        !nzchar(x$doi)
+      },
       logical(1)
     )
   ]
@@ -2168,7 +2430,7 @@ idfetcher <- function(
       "======================================================================"
     )
     message(
-      "PUBMED TITLE + AUTHOR SEARCH"
+      "PUBMED TITLE SEARCH FOR ARTICLES WITHOUT DOI"
     )
     message(
       "======================================================================"
@@ -2286,6 +2548,11 @@ idfetcher <- function(
         )
       )
 
+      message(
+        "  Match type: ",
+        record$match_type
+      )
+
       if (
         nzchar(record$first_author)
       ) {
@@ -2304,6 +2571,51 @@ idfetcher <- function(
           "NO"
         )
       )
+
+      # ----------------------------------------------------------------------
+      # If PubMed title search found PMID, use PMC converter to find PMCID.
+      # ----------------------------------------------------------------------
+
+      if (
+        nzchar(pmid) &&
+        !nzchar(pmcid)
+      ) {
+
+        pmid_record <- tryCatch(
+          get_pmc_records(
+            pmid,
+            idtype = "pmid"
+          ),
+          error = function(e) {
+
+            message(
+              "PMC PMID lookup failed: ",
+              conditionMessage(e)
+            )
+
+            errors <<- errors + 1
+
+            list()
+          }
+        )
+
+        pmid_pmc_record <- pmid_record[[pmid]]
+
+        if (!is.null(pmid_pmc_record)) {
+
+          converted_pmcid <-
+            pmid_pmc_record$pmcid %||% ""
+
+          converted_pmcid <- trimws(
+            as.character(converted_pmcid)
+          )
+
+          if (nzchar(converted_pmcid)) {
+
+            pmcid <- converted_pmcid
+          }
+        }
+      }
 
       message(
         "  PMID identified: ",
@@ -2407,11 +2719,13 @@ idfetcher <- function(
         )
 
         if (add_pmid) {
+
           pmids_added <-
             pmids_added + 1
         }
 
         if (add_pmcid) {
+
           pmcids_added <-
             pmcids_added + 1
         }
@@ -2427,65 +2741,64 @@ idfetcher <- function(
 
       } else {
 
-        tryCatch(
-          {
+        tryCatch({
 
-            if (add_pmid) {
+          if (add_pmid) {
 
-              item$data$PMID <-
-                as.character(
-                  final_pmid
-                )
-            }
-
-            if (add_pmcid) {
-
-              item$data$PMCID <-
-                as.character(
-                  final_pmcid
-                )
-            }
-
-            update_zotero_item(
-              item
-            )
-
-            updated <- updated + 1
-
-            if (add_pmid) {
-              pmids_added <-
-                pmids_added + 1
-            }
-
-            if (add_pmcid) {
-              pmcids_added <-
-                pmcids_added + 1
-            }
-
-            if (
-              add_pmid &&
-              add_pmcid
-            ) {
-
-              both_added <-
-                both_added + 1
-            }
-
-            message(
-              "  UPDATED Zotero."
-            )
-
-          },
-          error = function(e) {
-
-            errors <<- errors + 1
-
-            message(
-              "  ZOTERO ERROR: ",
-              conditionMessage(e)
-            )
+            item$data$PMID <-
+              as.character(
+                final_pmid
+              )
           }
-        )
+
+          if (add_pmcid) {
+
+            item$data$PMCID <-
+              as.character(
+                final_pmcid
+              )
+          }
+
+          update_zotero_item(
+            item
+          )
+
+          updated <- updated + 1
+
+          if (add_pmid) {
+
+            pmids_added <-
+              pmids_added + 1
+          }
+
+          if (add_pmcid) {
+
+            pmcids_added <-
+              pmcids_added + 1
+          }
+
+          if (
+            add_pmid &&
+            add_pmcid
+          ) {
+
+            both_added <-
+              both_added + 1
+          }
+
+          message(
+            "  UPDATED Zotero."
+          )
+
+        }, error = function(e) {
+
+          errors <<- errors + 1
+
+          message(
+            "  ZOTERO ERROR: ",
+            conditionMessage(e)
+          )
+        })
       }
 
       Sys.sleep(
